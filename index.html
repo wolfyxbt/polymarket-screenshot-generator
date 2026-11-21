@@ -5,77 +5,275 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Polymarket Screenshot Generator · Polymarket 截图生成器</title>
 <meta name="description" content="粘贴 Polymarket 市场链接，生成一张线尾直接标注选项和概率的走势图 PNG。纯静态网页，非官方工具。">
+<meta name="color-scheme" content="light dark">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2316191D'/%3E%3Cpath d='M6 22l6-7 5 4 9-10' fill='none' stroke='%2387BFFF' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='26' cy='9' r='3' fill='%2387BFFF'/%3E%3C/svg%3E">
 <style>
-  :root { --ink:#16191D; --grey:#858D99; --rule:#E3E6EA; --blue:#1652F0; }
-  * { box-sizing: border-box; }
-  body { margin:0; background:#F3F4F6; color:var(--ink);
-         font:14px/1.4 -apple-system, system-ui, "PingFang SC", "Helvetica Neue", sans-serif; }
-  .bar { position:sticky; top:0; z-index:2; background:#fff; border-bottom:1px solid var(--rule); padding:14px 20px; }
-  .wrap { max-width:1000px; margin:0 auto; }
-  form { display:flex; gap:8px; }
-  input[type=text], select { height:38px; border:1px solid var(--rule); border-radius:8px; padding:0 12px; font:inherit;
-                              background:#fff; color:inherit; min-width:0; }
-  #link { flex:1; }
-  button { height:38px; border:1px solid var(--rule); border-radius:8px; padding:0 14px; font:inherit; font-weight:600;
-           background:#fff; color:inherit; cursor:pointer; white-space:nowrap; }
-  button:hover { background:#F6F7F9; }
-  button.primary { background:var(--blue); border-color:var(--blue); color:#fff; }
-  button.primary:hover { filter:brightness(1.08); background:var(--blue); }
-  button:disabled { opacity:.5; cursor:default; }
-  .opts { display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; margin-top:10px; }
-  .opts label { display:flex; align-items:center; gap:6px; color:#4B5563; }
-  .opts select { height:34px; padding:0 8px; }
-  .seg { display:flex; border:1px solid var(--rule); border-radius:8px; overflow:hidden; }
-  .seg button { height:32px; border:0; border-radius:0; padding:0 11px; font-weight:500; color:#4B5563; }
-  .seg button.on { background:var(--ink); color:#fff; }
+  /* 这里只管工具自己的界面；生成的图在下面的 buildSVG 里，两边互不影响 */
+  :root {
+    --bg:#F4F5F7; --surface:#FFFFFF; --fill:#EEF0F3; --seg-on:#FFFFFF;
+    --ink:#16191D; --ink2:#4A515C; --mute:#7B838F; --line:#E4E7EB; --line2:#D3D8DE;
+    --accent:#16191D; --on-accent:#FFFFFF; --focus:#2F6BFF; --ok:#12833B;
+    --err:#B42318; --err-bg:#FDEEEC; --err-line:#F6C9C4;
+    --shadow:0 1px 2px rgba(16,24,40,.05), 0 8px 24px rgba(16,24,40,.07);
+    --r:10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#0F1114; --surface:#181B20; --fill:#23272E; --seg-on:#3A404A;
+      --ink:#ECEEF1; --ink2:#B4BAC4; --mute:#858D99; --line:#2A2F37; --line2:#3B414B;
+      --accent:#ECEEF1; --on-accent:#16191D; --focus:#6C96FF; --ok:#2F9E62;
+      --err:#FF9288; --err-bg:#34191A; --err-line:#5E2A27;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased;
+         font:14px/1.45 PMInter, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }
+  button, input { font:inherit; color:inherit; }
+  button { cursor:pointer; }
+  [hidden] { display:none !important; }
+  :focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
+
+  /* 顶栏：名字、链接输入、源码 */
+  .top { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:16px; height:64px; padding:0 24px;
+         background:color-mix(in srgb, var(--surface) 86%, transparent); backdrop-filter:saturate(1.4) blur(12px);
+         -webkit-backdrop-filter:saturate(1.4) blur(12px); border-bottom:1px solid var(--line); }
+  .brand { display:flex; align-items:center; gap:10px; flex:none; color:inherit; text-decoration:none;
+           font-weight:650; font-size:15px; white-space:nowrap; }
+  .brand svg { width:28px; height:28px; flex:none; }
+  .brand em { font-style:normal; font-weight:500; font-size:11px; color:var(--mute);
+              border:1px solid var(--line2); border-radius:999px; padding:1px 7px; }
+  .linkbar { flex:1; display:flex; gap:8px; max-width:760px; min-width:0; margin:0 auto; }
+  .linkfield { position:relative; flex:1; min-width:0; }
+  .linkfield svg { position:absolute; left:12px; top:50%; transform:translateY(-50%); width:16px; height:16px;
+                   color:var(--mute); pointer-events:none; }
+  #link { width:100%; height:40px; padding:0 38px 0 36px; border:1px solid var(--line2); border-radius:var(--r);
+          background:var(--surface); outline:none; text-overflow:ellipsis; }
+  #link::placeholder, .field input::placeholder { color:var(--mute); }
+  #link:focus, .field input:focus { border-color:var(--focus); box-shadow:0 0 0 3px color-mix(in srgb, var(--focus) 22%, transparent); }
+  #clear { position:absolute; right:6px; top:50%; transform:translateY(-50%); width:28px; height:28px; border:0;
+           border-radius:7px; background:none; color:var(--mute); font-size:18px; line-height:1; }
+  #clear:hover { background:var(--fill); color:var(--ink); }
+  .gh { flex:none; display:grid; place-items:center; width:36px; height:36px; border-radius:9px; color:var(--ink2); }
+  .gh:hover { background:var(--fill); color:var(--ink); }
+  .gh svg { width:20px; height:20px; }
+
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; height:40px; padding:0 16px;
+         border:1px solid var(--line2); border-radius:var(--r); background:var(--surface); font-weight:600;
+         white-space:nowrap; transition:background .12s, transform .06s; }
+  .btn:hover { background:var(--fill); }
+  .btn:active { transform:translateY(1px); }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
+  .btn.primary:hover { background:color-mix(in srgb, var(--accent) 84%, var(--surface)); }
+  .btn:disabled { opacity:.45; cursor:default; transform:none; }
+  .btn svg { width:16px; height:16px; flex:none; }
+  #go { min-width:84px; }
+
+  /* 主体：左边设置，右边预览 */
+  .shell { display:grid; grid-template-columns:312px minmax(0, 1fr); gap:24px; align-items:start;
+           max-width:1346px; margin:0 auto; padding:20px 24px 32px; }
+  .side { position:sticky; top:80px; display:grid; gap:12px; max-height:calc(100vh - 92px); overflow:auto;
+          scrollbar-width:thin; }
+  .panel { display:grid; gap:16px; padding:16px; background:var(--surface); border:1px solid var(--line); border-radius:14px; }
+  .panel h2 { margin:0 0 8px; font-size:12px; font-weight:600; color:var(--mute); letter-spacing:.02em; }
+  .headrow { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .textlink { border:0; background:none; padding:0; font-size:12px; color:var(--mute); text-decoration:underline; text-underline-offset:2px; }
+  .textlink:hover { color:var(--ink); }
+  .hint { margin:6px 0 0; font-size:12px; color:var(--mute); line-height:1.5; }
+
+  .seg { display:flex; gap:2px; padding:3px; background:var(--fill); border-radius:9px; }
+  .seg button { flex:1; min-width:0; height:30px; padding:0 2px; border:0; border-radius:7px; background:none;
+                color:var(--ink2); font-size:13px; font-weight:500; white-space:nowrap; }
+  .seg button:hover { color:var(--ink); }
+  .seg button[aria-pressed="true"] { background:var(--seg-on); color:var(--ink); font-weight:600;
+                                     box-shadow:0 1px 2px rgba(16,24,40,.14), 0 0 0 .5px var(--line2); }
+
+  .switch { display:flex; align-items:center; justify-content:space-between; gap:12px; cursor:pointer; }
+  .switch b { display:block; font-size:13px; font-weight:600; }
+  .switch small { display:block; margin-top:2px; font-size:12px; color:var(--mute); }
+  .switch input { position:absolute; opacity:0; width:1px; height:1px; }
+  .switch i { position:relative; flex:none; width:38px; height:22px; border-radius:999px; background:var(--line2); transition:background .15s; }
+  .switch i::after { content:""; position:absolute; left:2px; top:2px; width:18px; height:18px; border-radius:50%;
+                     background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.28); transition:transform .15s; }
+  .switch input:checked + i { background:var(--ok); }
+  .switch input:checked + i::after { transform:translateX(16px); }
+  .switch input:focus-visible + i { outline:2px solid var(--focus); outline-offset:2px; }
+
+  .texts { display:grid; gap:8px; }
+  .field { display:grid; grid-template-columns:56px minmax(0, 1fr); align-items:center; gap:8px; }
+  .field > span { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--mute); white-space:nowrap; }
+  .field > span i { width:8px; height:8px; border-radius:50%; flex:none; }
+  .field input { width:100%; height:34px; padding:0 10px; border:1px solid var(--line2); border-radius:8px;
+                 background:var(--surface); outline:none; }
+
+  .recent { display:grid; gap:2px; margin:0 -8px -6px; }
+  .recent button { display:block; width:100%; padding:7px 8px; border:0; border-radius:7px; background:none; text-align:left;
+                   font-size:13px; color:var(--ink2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .recent button:hover { background:var(--fill); color:var(--ink); }
+
+  main { min-width:0; }
+  .wrap { max-width:962px; margin:0 auto; }
+  .actions { display:flex; align-items:center; gap:10px; min-height:40px; margin-bottom:12px; }
   .grow { flex:1; }
-  details { margin-top:10px; }
-  summary { cursor:pointer; color:#4B5563; user-select:none; width:max-content; }
-  .texts { display:grid; grid-template-columns:86px 1fr; gap:8px 10px; align-items:center; margin-top:10px; max-width:640px; }
-  .texts span { color:#4B5563; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .texts input { height:34px; }
-  #msg { margin-top:10px; min-height:20px; color:#4B5563; }
-  #msg.err { color:#D92D20; }
-  main { padding:24px 20px 60px; }
-  #stage { max-width:962px; margin:0 auto; background:#fff; border-radius:12px; overflow:hidden;
-           box-shadow:0 1px 3px rgba(16,24,40,.08); }
-  #stage svg { display:block; width:100%; height:auto; }
-  .empty { padding:80px 20px; text-align:center; color:var(--grey); }
-  footer { max-width:962px; margin:18px auto 0; color:var(--grey); font-size:12px; line-height:1.7; text-align:center; }
+  #msg { display:flex; align-items:center; gap:8px; min-width:0; font-size:13px; color:var(--ink2); }
+  #msg:not(:empty)::before { content:""; flex:none; width:7px; height:7px; border-radius:50%; background:var(--ok); }
+  body.busy #msg::before { background:var(--mute); animation:pulse 1s ease-in-out infinite; }
+  #dims { font-size:12px; color:var(--mute); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  #err { margin-bottom:12px; padding:10px 14px; border:1px solid var(--err-line); border-radius:var(--r);
+         background:var(--err-bg); color:var(--err); font-size:13px; }
+
+  .stage { position:relative; }
+  .shot { background:#fff; border:1px solid var(--line); border-radius:6px; overflow:hidden; box-shadow:var(--shadow); transition:opacity .15s; }
+  .shot svg { display:block; width:100%; height:auto; }
+  .stage.busy .shot, .stage.busy .empty { opacity:.45; }
+  .stage.busy::after { content:""; position:absolute; left:50%; top:96px; width:28px; height:28px; margin-left:-14px;
+                       border:3px solid var(--line2); border-top-color:var(--ink); border-radius:50%; animation:spin .7s linear infinite; }
+
+  .empty { padding:44px 28px 28px; text-align:center; background:var(--surface); border:1px dashed var(--line2);
+           border-radius:14px; transition:opacity .15s; }
+  .empty h1 { margin:0 0 8px; font-size:22px; font-weight:650; letter-spacing:-.01em; }
+  .empty p { max-width:460px; margin:0 auto 18px; color:var(--ink2); }
+  .chips { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin-bottom:28px; }
+  .chips button { height:32px; padding:0 13px; border:1px solid var(--line2); border-radius:999px; background:var(--surface);
+                  font-size:13px; color:var(--ink2); }
+  .chips button:hover { background:var(--fill); color:var(--ink); }
+  .sample { position:relative; max-width:640px; margin:0 auto; border:1px solid var(--line); border-radius:6px;
+            box-shadow:var(--shadow); background:#fff; }
+  .sample img { display:block; width:100%; height:auto; border-radius:5px; }
+  .sample span { position:absolute; left:50%; top:-11px; transform:translateX(-50%); padding:2px 10px; border-radius:999px;
+                 background:var(--ink); color:var(--surface); font-size:11px; font-weight:600; white-space:nowrap; }
+
+  footer { padding:0 24px 40px; color:var(--mute); font-size:12px; line-height:1.7; text-align:center; }
   footer a { color:inherit; }
+
+  #toast { position:fixed; left:50%; bottom:28px; z-index:9; max-width:min(560px, calc(100vw - 32px)); padding:10px 16px;
+           border-radius:12px; background:#16191D; color:#fff; font-size:13px; box-shadow:0 8px 28px rgba(0,0,0,.28);
+           opacity:0; transform:translate(-50%, 12px); pointer-events:none; transition:opacity .18s, transform .18s; }
+  #toast.on { opacity:1; transform:translate(-50%, 0); }
+  #toast.bad { background:#B42318; }
+
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @keyframes pulse { 50% { opacity:.35; } }
+  @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
+
+  /* 窄屏：设置在上，预览居中，改文字和最近生成排到预览下面 */
+  @media (max-width:1100px) {
+    .shell { display:flex; flex-direction:column; align-items:stretch; gap:16px; padding:16px 16px 28px; }
+    .side { display:contents; }
+    .side > *, main { width:100%; max-width:962px; margin:0 auto; }
+    .side > .a { order:1; } main { order:2; } .side > .b { order:3; } .side > .c { order:4; }
+  }
+  @media (min-width:641px) and (max-width:1100px) {
+    .panel.a { grid-template-columns:1fr 1fr; gap:16px 24px; }
+    .texts { grid-template-columns:1fr 1fr; }
+  }
+  @media (max-width:640px) {
+    .top { gap:10px; padding:0 12px; }
+    .brand span, .brand em, .gh { display:none; }
+    .actions { flex-wrap:wrap; }
+    .actions .grow { display:none; }
+    #msg { flex:1 0 100%; }
+    #dims { display:none; }
+    .actions .btn { flex:1; }
+    .empty { padding:32px 16px 16px; }
+  }
 </style>
 </head>
 <body>
-<div class="bar"><div class="wrap">
-  <form id="form">
-    <input type="text" id="link" autocomplete="off" spellcheck="false"
-           placeholder="粘贴 Polymarket 市场链接，例如 https://polymarket.com/event/next-ceo-of-nvidia">
-    <button class="primary" id="go">生成</button>
+<header class="top">
+  <a class="brand" href="./" aria-label="Polymarket 截图生成器">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#16191D"/><path d="M6 22l6-7 5 4 9-10" fill="none" stroke="#87BFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="26" cy="9" r="3" fill="#87BFFF"/></svg>
+    <span>Polymarket 截图生成器</span><em>非官方</em>
+  </a>
+  <form id="form" class="linkbar">
+    <div class="linkfield">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6.7 9.3a3 3 0 0 0 4.2 0l2.2-2.2a3 3 0 0 0-4.2-4.2l-.8.8M9.3 6.7a3 3 0 0 0-4.2 0L2.9 8.9a3 3 0 0 0 4.2 4.2l.8-.8"/></svg>
+      <input type="text" id="link" autocomplete="off" spellcheck="false" aria-label="Polymarket 市场链接"
+             placeholder="粘贴 Polymarket 市场链接，例如 https://polymarket.com/event/next-ceo-of-nvidia">
+      <button type="button" id="clear" aria-label="清空链接" hidden>×</button>
+    </div>
+    <button class="btn primary" id="go">生成</button>
   </form>
-  <div class="opts">
-    <div class="seg" id="interval"></div>
-    <label>选项数 <select id="top"></select></label>
-    <label>语言 <select id="lang"><option value="zh">中文</option><option value="en">English</option></select></label>
-    <label><input type="checkbox" id="rows" checked> 选项列表</label>
-    <span class="grow"></span>
-    <button id="copy" disabled>复制图片</button>
-    <button id="save" disabled>下载 PNG</button>
-  </div>
-  <details id="edit">
-    <summary>修改文字</summary>
-    <div class="texts" id="texts"></div>
-  </details>
-  <div id="msg"></div>
-</div></div>
-<main>
-  <div id="stage"><div class="empty">粘贴链接后点"生成"</div></div>
-  <footer>
-    非官方工具，与 Polymarket 没有关联；数据来自 Polymarket 的公开接口，商标和图标归 Polymarket 所有。<br>
-    本页没有后端，不收集数据：行情直接从 Polymarket 读取，导出图片时头像经 wsrv.nl 图片代理中转。
-    <a href="https://github.com/wolfyxbt/polymarket-screenshot-generator" target="_blank" rel="noopener">源码在 GitHub</a>
-  </footer>
-</main>
+  <a class="gh" href="https://github.com/wolfyxbt/polymarket-screenshot-generator" target="_blank" rel="noopener" aria-label="GitHub 源码">
+    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+  </a>
+</header>
+
+<div class="shell">
+  <aside class="side" aria-label="设置">
+    <div class="panel a">
+      <section>
+        <h2 id="h-interval">时间范围</h2>
+        <div class="seg" id="interval" role="group" aria-labelledby="h-interval"></div>
+      </section>
+      <section>
+        <h2 id="h-top">选项数</h2>
+        <div class="seg" id="top" role="group" aria-labelledby="h-top"></div>
+        <p class="hint">按当前概率从高到低，画前几个选项。</p>
+      </section>
+      <section>
+        <h2 id="h-lang">图片语言</h2>
+        <div class="seg" id="lang" role="group" aria-labelledby="h-lang"></div>
+      </section>
+      <section>
+        <label class="switch">
+          <span><b>选项列表</b><small>走势图下面带上每个选项的买入价</small></span>
+          <input type="checkbox" id="rows" checked><i></i>
+        </label>
+      </section>
+    </div>
+    <div class="panel b">
+      <section>
+        <div class="headrow"><h2>修改文字</h2><button type="button" class="textlink" id="reset" hidden>恢复默认</button></div>
+        <div class="texts" id="texts"></div>
+        <p class="hint" id="textsHint">生成后可以改标题、分类和选项名，改动按市场记在这个浏览器里。</p>
+      </section>
+    </div>
+    <div class="panel c" id="recentBox" hidden>
+      <section>
+        <div class="headrow"><h2>最近生成</h2><button type="button" class="textlink" id="clearRecent">清空</button></div>
+        <div class="recent" id="recent"></div>
+      </section>
+    </div>
+  </aside>
+
+  <main>
+    <div class="wrap">
+      <div class="actions">
+        <div id="msg" role="status" aria-live="polite"></div>
+        <span class="grow"></span>
+        <span id="dims"></span>
+        <button class="btn" id="save" disabled>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8M4.8 7.4 8 10.6l3.2-3.2M3 13.5h10"/></svg>
+          <span>下载 PNG</span>
+        </button>
+        <button class="btn primary" id="copy" disabled>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.8"/><path d="M10.5 3.2A1.7 1.7 0 0 0 9 2.5H4.3A1.8 1.8 0 0 0 2.5 4.3V9c0 .65.3 1.2.8 1.5"/></svg>
+          <span>复制图片</span>
+        </button>
+      </div>
+      <div id="err" role="alert" hidden></div>
+      <div id="stage" class="stage">
+        <div class="empty">
+          <h1>粘贴一个 Polymarket 市场链接</h1>
+          <p>生成一张线尾直接标着选项和概率的走势图，复制后可以直接贴进推文。</p>
+          <div class="chips">
+            <button type="button" data-link="https://polymarket.com/event/next-ceo-of-nvidia">试试：多选项市场</button>
+            <button type="button" data-link="https://polymarket.com/event/new-nvidia-ceo-named-by-december-31-2026">试试：是 / 否市场</button>
+          </div>
+          <div class="sample"><img src="examples/multi-outcome.png" width="1924" height="1528" alt="生成效果示例：NVIDIA 下一任 CEO 市场的走势图" loading="lazy"><span>示例效果</span></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<footer>
+  非官方工具，与 Polymarket 没有关联；数据来自 Polymarket 的公开接口，商标和图标归 Polymarket 所有。<br>
+  本页没有后端，不收集数据：行情直接从 Polymarket 读取，导出图片时头像经 wsrv.nl 图片代理中转。
+  <a href="https://github.com/wolfyxbt/polymarket-screenshot-generator" target="_blank" rel="noopener">源码在 GitHub</a>
+</footer>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script>
 const GAMMA = 'https://gamma-api.polymarket.com', CLOB = 'https://clob.polymarket.com';
@@ -113,8 +311,10 @@ const lum = hex => {  // 相对亮度，用来决定色块上的字用深色还�
 // ───────────────────────── 取数 ─────────────────────────
 async function getJSON(url) {
   let r;
-  try { r = await fetch(url); }
-  catch { throw new Error('连不上 Polymarket 的接口。请确认这个浏览器能打开 polymarket.com。'); }
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 15000);   // 连不上时别一直转圈
+  try { r = await fetch(url, { signal: ctl.signal }); }
+  catch { throw new Error('连不上 Polymarket 的接口（15 秒内没有回应）。请确认这个浏览器能打开 polymarket.com。'); }
+  finally { clearTimeout(timer); }
   if (!r.ok) throw new Error(`Polymarket 接口返回 ${r.status}`);
   return r.json();
 }
@@ -390,49 +590,98 @@ function buildSVG(B, forExport = false) {
 }
 
 // ───────────────────────── 页面 ─────────────────────────
-const state = { data: null, interval: '6h', top: 4, lang: 'zh', rows: true };
-const overrides = () => { try { return JSON.parse(localStorage.getItem(`pmc:${state.data.slug}:${state.lang}`)) || {}; } catch { return {}; } };
-const saveOverrides = o => { try { localStorage.setItem(`pmc:${state.data.slug}:${state.lang}`, JSON.stringify(o)); } catch {} };
-const say = (t, err) => { $('msg').textContent = t || ''; $('msg').className = err ? 'err' : ''; };
+const state = { data: null, interval: '6h', top: 4, lang: 'zh', rows: true, req: 0 };
+const ovKey = () => `pmc:${state.data.slug}:${state.lang}`;
+const overrides = () => { try { return JSON.parse(localStorage.getItem(ovKey())) || {}; } catch { return {}; } };
+const saveOverrides = o => { try { localStorage.setItem(ovKey(), JSON.stringify(o)); } catch {} };
+const lineColor = (i, n) => n === 1 ? COLORS[1] : COLORS[i % COLORS.length];
+
+// 三种反馈：预览上方的状态行、出错时的红色提示条、操作成功后底部的短提示
+const say = t => { $('msg').textContent = t || ''; };
+const fail = t => { $('err').textContent = t || ''; $('err').hidden = !t; };
+let toastTimer;
+function toast(t, bad) {
+  const el = $('toast'); el.textContent = t; el.className = 'on' + (bad ? ' bad' : '');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.className = ''; }, bad ? 7000 : 2600);
+}
+function setBusy(b) {
+  document.body.classList.toggle('busy', b); $('stage').classList.toggle('busy', b);
+  $('go').disabled = b; $('go').textContent = b ? '生成中…' : '生成';
+}
+function flash(btn, text) {   // 按钮上的字短暂换成"已复制"之类
+  const span = btn.querySelector('span'); btn.dataset.label = btn.dataset.label || span.textContent;
+  span.textContent = text; clearTimeout(btn._t); btn._t = setTimeout(() => { span.textContent = btn.dataset.label; }, 1600);
+}
 
 function bundle() {   // 抓到的数据 + 你改过的文字 -> 画图用的数据
   const d = state.data, ov = overrides();
   const lines = d.lines.map((s, i) => ({ ...s, name: (ov.names || {})[s.key] || s.name,
-    color: d.lines.length === 1 ? COLORS[1] : COLORS[i % COLORS.length], last: s.history[s.history.length - 1].p }));
+    color: lineColor(i, d.lines.length), last: s.history[s.history.length - 1].p }));
   return { ...d, lines, title: ov.title || d.title, crumbs: ov.crumbs || d.crumbs, lang: state.lang, rows: state.rows };
 }
 
 function render() {
   if (!state.data) return;
-  $('stage').innerHTML = buildSVG(bundle()).svg;
+  const { svg, H } = buildSVG(bundle());
+  $('stage').innerHTML = `<div class="shot">${svg}</div>`;
+  $('dims').textContent = `${W * 2} × ${H * 2} px`;
   $('copy').disabled = $('save').disabled = false;
 }
 
+const hasOverrides = o => !!(o.title || o.crumbs || Object.values(o.names || {}).some(Boolean));
 function fillTexts() {
   const d = state.data, ov = overrides(), box = $('texts');
   box.innerHTML = '';
-  const row = (label, value, placeholder, set) => {
-    const s = document.createElement('span'); s.textContent = label; s.title = label;
-    const i = document.createElement('input'); i.type = 'text'; i.value = value || ''; i.placeholder = placeholder;
-    i.oninput = () => { const o = overrides(); set(o, i.value.trim()); saveOverrides(o); render(); };
-    box.append(s, i);
+  const row = (label, value, placeholder, set, dot) => {
+    const w = document.createElement('label'); w.className = 'field';
+    const s = document.createElement('span');
+    if (dot) { const c = document.createElement('i'); c.style.background = dot; s.append(c); }
+    s.append(label);
+    const i = document.createElement('input'); i.type = 'text'; i.value = value || ''; i.placeholder = placeholder; i.spellcheck = false;
+    i.oninput = () => { const o = overrides(); set(o, i.value.trim()); saveOverrides(o); render(); $('reset').hidden = !hasOverrides(o); };
+    w.append(s, i); box.append(w);
   };
   row('标题', ov.title, d.title, (o, v) => o.title = v);
   row('分类', ov.crumbs, d.crumbs, (o, v) => o.crumbs = v);
-  d.lines.forEach((s, i) => row(`选项 ${i + 1}`, (ov.names || {})[s.key], s.name, (o, v) => { (o.names = o.names || {})[s.key] = v; }));
+  d.lines.forEach((s, i) => row(`选项 ${i + 1}`, (ov.names || {})[s.key], s.name,
+    (o, v) => { (o.names = o.names || {})[s.key] = v; }, lineColor(i, d.lines.length)));
+  $('reset').hidden = !hasOverrides(ov);
+  $('textsHint').textContent = '原站的分类是"大类 · 标签"（如 Finance · NVDA），接口只给标签，大类要在这里补。改动按市场记在这个浏览器里。';
 }
+$('reset').onclick = () => { try { localStorage.removeItem(ovKey()); } catch {} fillTexts(); render(); };
+
+// 最近生成过的市场，点一下重新生成
+const recents = () => { try { return JSON.parse(localStorage.getItem('pmc:recent')) || []; } catch { return []; } };
+function drawRecent() {
+  const list = recents(), box = $('recent');
+  box.innerHTML = ''; $('recentBox').hidden = !list.length;
+  list.forEach(r => {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.link = r.link;
+    b.textContent = b.title = r.title || r.slug; box.append(b);
+  });
+}
+function remember(link, slug, title) {
+  try { localStorage.setItem('pmc:recent', JSON.stringify([{ link, slug, title }, ...recents().filter(r => r.slug !== slug)].slice(0, 6))); } catch {}
+  drawRecent();
+}
+$('clearRecent').onclick = () => { try { localStorage.removeItem('pmc:recent'); } catch {} drawRecent(); };
+
+const persist = () => { try { localStorage.setItem('pmc:last', JSON.stringify({ link: $('link').value.trim(), interval: state.interval, top: state.top, lang: state.lang, rows: state.rows })); } catch {} };
 
 async function load() {
   const link = $('link').value.trim();
   if (!link) return;
-  $('go').disabled = true; say('正在从 Polymarket 取数据…');
+  const my = ++state.req, stale = () => my !== state.req;   // 连点几次时，只认最后一次
+  setBusy(true); fail(''); say('正在从 Polymarket 取数据…');
   try {
     await fontReady;
     const [slug, marketSlug] = parseSlug(link);
     const ev = await fetchEvent(slug, marketSlug, state.lang);
+    if (stale()) return;
     let { lines, single } = buildLines(ev, slug ? marketSlug : null);
     lines = lines.slice(0, state.top);
     await Promise.all(lines.map(async s => { s.history = await fetchHistory(s.token, state.interval); }));
+    if (stale()) return;
     const skipped = lines.filter(s => s.history.length < 2).length;
     lines = lines.filter(s => s.history.length >= 2);
     if (!lines.length) throw new Error('这个市场在所选时间范围内没有价格历史，换个时间范围试试（比如"全部"）。');
@@ -445,11 +694,11 @@ async function load() {
     fillTexts(); render();
     const last = new Date(Math.max(...lines.map(s => s.history[s.history.length - 1].t)) * 1000);
     say(`数据更新到 ${last.toLocaleString('zh-CN', { hour12: false })}` + (skipped ? `；有 ${skipped} 个选项在这段时间没有价格历史，没画` : ''));
-    try { localStorage.setItem('pmc:last', JSON.stringify({ link, interval: state.interval, top: state.top, lang: state.lang, rows: state.rows })); } catch {}
+    persist(); remember(link, state.data.slug, state.data.title);
     // 头像转成可导出的格式，转好后重画一次
-    Promise.all([state.data.image, ...lines.map(s => s.logo)].map(inlineImage)).then(render);
-  } catch (e) { say(e.message || String(e), true); }
-  $('go').disabled = false;
+    Promise.all([state.data.image, ...lines.map(s => s.logo)].map(inlineImage)).then(() => { if (!stale()) render(); });
+  } catch (e) { if (!stale()) { fail(e.message || String(e)); say(''); } }
+  if (!stale()) setBusy(false);
 }
 
 async function toPNG() {
@@ -472,32 +721,51 @@ $('save').onclick = async () => {
     const { blob, missing } = await toPNG(), a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = `${state.data.slug}-${state.interval}.png`; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    say('已下载 PNG' + note(missing), !!missing);
-  } catch (e) { say(e.message, true); }
+    flash($('save'), '已下载'); toast('已下载 PNG' + note(missing), !!missing);
+  } catch (e) { toast(e.message || '导出失败', true); }
 };
 $('copy').onclick = async () => {
   try {
     const p = toPNG();   // 剪贴板要求在点击里立刻发起，所以把"还没出来的图"直接交给它
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': p.then(r => r.blob) })]);
-    say('已复制到剪贴板，可以直接粘贴到推文里' + note((await p).missing), !!(await p).missing);
-  } catch (e) { say('这个浏览器不允许复制图片，请用"下载 PNG"。', true); }
+    const { missing } = await p;
+    flash($('copy'), '已复制'); toast('已复制到剪贴板，可以直接粘贴到推文里' + note(missing), !!missing);
+  } catch (e) { toast('这个浏览器不允许复制图片，请用"下载 PNG"。', true); }
 };
 
 // 控件
-TABS.forEach((k, i) => {
-  const b = document.createElement('button'); b.type = 'button'; b.dataset.k = k; b.textContent = TEXT.zh.tabs[i];
-  b.onclick = () => { state.interval = k; syncControls(); load(); };
-  $('interval').append(b);
-});
-for (let n = 1; n <= 8; n++) $('top').add(new Option(n, n));
-function syncControls() {
-  [...$('interval').children].forEach(b => b.classList.toggle('on', b.dataset.k === state.interval));
-  $('top').value = state.top; $('lang').value = state.lang; $('rows').checked = state.rows;
+function seg(id, items, set) {
+  items.forEach(([k, label]) => {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.k = k; b.textContent = label;
+    b.onclick = () => { if (b.getAttribute('aria-pressed') === 'true') return; set(k); syncControls(); persist(); load(); };
+    $(id).append(b);
+  });
 }
-$('top').onchange = () => { state.top = +$('top').value; load(); };
-$('lang').onchange = () => { state.lang = $('lang').value; load(); };
-$('rows').onchange = () => { state.rows = $('rows').checked; render(); };
-$('form').onsubmit = e => { e.preventDefault(); load(); };
+seg('interval', TABS.map((k, i) => [k, TEXT.zh.tabs[i]]), k => { state.interval = k; });
+seg('top', [1, 2, 3, 4, 5, 6, 7, 8].map(n => [String(n), n]), k => { state.top = +k; });
+seg('lang', [['zh', '中文'], ['en', 'English']], k => { state.lang = k; });
+function syncControls() {
+  [['interval', state.interval], ['top', String(state.top)], ['lang', state.lang]].forEach(([id, v]) =>
+    [...$(id).children].forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === v))));
+  $('rows').checked = state.rows;
+}
+$('rows').onchange = () => { state.rows = $('rows').checked; persist(); render(); };
+
+// 链接输入：回车或点"生成"；粘贴后自动生成；在页面空白处粘贴 Polymarket 链接也行
+const syncClear = () => { $('clear').hidden = !$('link').value; };
+$('form').onsubmit = e => { e.preventDefault(); if (!$('link').value.trim()) $('link').focus(); else load(); };
+$('link').oninput = syncClear;
+$('link').addEventListener('paste', () => setTimeout(() => { syncClear(); load(); }, 0));
+$('clear').onclick = () => { $('link').value = ''; syncClear(); $('link').focus(); };
+document.addEventListener('paste', e => {
+  if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
+  const t = (e.clipboardData.getData('text') || '').trim();
+  if (/polymarket\.com\//i.test(t)) { $('link').value = t; syncClear(); load(); }
+});
+document.addEventListener('click', e => {   // 示例和"最近生成"里的条目
+  const b = e.target.closest('[data-link]'); if (!b) return;
+  $('link').value = b.dataset.link; syncClear(); load();
+});
 
 // 启动：地址栏参数优先（?url=…&interval=1w&top=4&lang=zh&rows=0），否则恢复上次的设置
 (function init() {
@@ -509,8 +777,8 @@ $('form').onsubmit = e => { e.preventDefault(); load(); };
   state.top = Math.min(8, Math.max(1, +(q.get('top') || saved.top || 4)));
   state.lang = ['zh', 'en'].includes(q.get('lang')) ? q.get('lang') : (saved.lang || 'zh');
   state.rows = q.has('rows') ? q.get('rows') !== '0' : saved.rows !== false;
-  syncControls();
-  $('link').value = link;
+  syncControls(); drawRecent();
+  $('link').value = link; syncClear();
   if (link) load();
 })();
 </script>

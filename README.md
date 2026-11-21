@@ -17,8 +17,10 @@ Polymarket 市场页的走势图把图例（每条线是谁、现在多少概率
 ## 怎么用
 
 1. 打开[在线页面](https://wolfyxbt.github.io/polymarket-screenshot-generator/)。
-2. 粘贴市场链接，例如 `https://polymarket.com/event/next-ceo-of-nvidia`，点"生成"。
-3. 按需要调整，然后点"复制图片"或"下载 PNG"。
+2. 粘贴市场链接，例如 `https://polymarket.com/event/next-ceo-of-nvidia`。粘贴后会自动生成，也可以按回车或点"生成"。
+3. 在左侧按需要调整，然后点"复制图片"或"下载 PNG"。
+
+最近生成过的市场会列在左侧，点一下就能重新生成。
 
 可以调整的内容：
 
